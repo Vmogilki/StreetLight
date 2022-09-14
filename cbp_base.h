@@ -44,6 +44,10 @@ static inline void unpack_sensor_data(struct sensor_data* dst, const struct sens
     dst->brightness = ntohs(pkt->brightness);
 }
 
+static inline void clean_sensor_data(struct sensor_data* _s) {
+    _s->temperature = 0;
+    _s->brightness = 0;
+}
 
 #define DISPLAY_TXT_LEN             45  /* Text string ended by trailing zero */
 #define DISPLAY_TEMPERATURE_LEN     8   /* Format [+/-]TT °C and trailing zero */
@@ -72,6 +76,14 @@ static inline void unpack_display_data(struct display_data* dst, const struct di
     memcpy(dst->temperature, pkt->temperature, sizeof(pkt->temperature));
     memcpy(dst->time, pkt->time, sizeof(pkt->time));
 }
+
+static inline void clean_display_data(struct display_data* _d) {
+    _d->brightness = 0;
+    memset(_d->text, 0, sizeof(_d->text));
+    memset(_d->temperature, 0, sizeof(_d->temperature));
+    memset(_d->time, 0, sizeof(_d->time));
+}
+
 
 /* Packets - protocol codes */
 #define FOREACH_PACKET_TYPE(PACKET_TYPE) \
@@ -181,6 +193,10 @@ static inline bool ether_addr_greater(const u8* addr1, const u8* addr2)
 }
 
 extern int debug;
+extern int (*cbp_packet_handler)(u16 cbp_op, struct sk_buff* skb);
+
+int cbp_rcv(struct sk_buff* skb, struct net_device* dev,
+    struct packet_type* pt, struct net_device* orig_dev);
 
 struct sk_buff* cbp_create(int op_command, int block_type, void* payload, 
     struct net_device* dev, const unsigned char* dest_hw, const unsigned char* src_hw);
