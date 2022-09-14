@@ -1,31 +1,15 @@
 #include <linux/module.h>
 #include <linux/moduleparam.h>
 #include <linux/init.h>
-#include <linux/netdevice.h>
-#include <linux/etherdevice.h>
-#include <linux/skbuff.h>
 #include <linux/timer.h>
 #include <linux/if_arp.h>
 #include <linux/time.h>
 
+# include "cbp_base.h"
 
 /* Module label */
 #define DEV_LABEL "IB"
 
-/* Debug printing */
-#define PRINTD(level,format,args...) \
-   (((level) & debug) ? printk(format, ## args) : 1)
-
-#define DEBUG_NONE   0x00
-#define DEBUG_ERR    0x01
-#define DEBUG_WARN   0x02
-#define DEBUG_INFO   0x04
-#define DEBUG_DBG    0x08
-#define DEBUG_ANY    0x0f
-#define DEFAULT_DEBUG_LEVEL (DEBUG_ERR | DEBUG_WARN | DEBUG_INFO)
-
-/* Custom packet type Client/Control Block Protocol (CBP) */
-#define ETH_P_CBP        0x5050                
 
 /* Timeouts */
 #define	TM_SLAVE_NEEDED_SENT    (3*HZ)  /* Master mode */
@@ -39,75 +23,8 @@
 #define SET_DATA_CYCLES         6
 
 /* Module params */
-static int debug = DEFAULT_DEBUG_LEVEL;
+int debug = DEFAULT_DEBUG_LEVEL;
 static char* eth_device_name = "ens160";
-
-/* CBP header */
-struct __attribute__((__packed__)) cbphdr {
-    __be16		cbp_op;		    
-    __be16		block_type;		
-};
-
-/* Sensor data reported by Slaves. CBP_GET_DATA_REP packet contains cbphdr + sensor_data */
-struct __attribute__((__packed__)) sensor_data {
-    short int   temperature;
-    u16		    brightness;
-};
-
-/* Pack sensor data into packet */
-inline void pack_sensor_data(struct sensor_data* pkt, const struct sensor_data* src) {
-    pkt->temperature = htons(src->temperature);
-    pkt->brightness = htons(src->brightness);
-}
-
-/* Unpack sensor data from packet */
-inline void unpack_sensor_data(struct sensor_data* dst, const struct sensor_data* pkt) {
-    dst->temperature = ntohs(pkt->temperature);
-    dst->brightness = ntohs(pkt->brightness);
-}
-
-
-#define DISPLAY_TXT_LEN             45  /* Text string ended by trailing zero */
-#define DISPLAY_TEMPERATURE_LEN     8   /* Format [+/-]TT °C and trailing zero */
-#define DISPLAY_TIME_LEN            9   /* Format HH:MM:SS and trailing zero */
-
-/* Display data sent by Master. CBP_SET_DATA packet contains cbphdr + display_data */
-struct __attribute__((__packed__)) display_data {
-    u16 brightness;
-    char text[DISPLAY_TXT_LEN];
-    char temperature[DISPLAY_TEMPERATURE_LEN];
-    char time[DISPLAY_TIME_LEN];
-};
-
-/* Pack display data into packet */
-inline void pack_display_data(struct display_data* pkt, const struct display_data* src) {
-    pkt->brightness = htons(src->brightness);
-    memcpy(pkt->text, src->text, sizeof(pkt->text));
-    memcpy(pkt->temperature, src->temperature, sizeof(pkt->temperature));
-    memcpy(pkt->time, src->time, sizeof(pkt->time));
-}
-
-/* Unpack display data from packet */
-inline void unpack_display_data(struct display_data* dst, const struct display_data* pkt) {
-    dst->brightness = ntohs(pkt->brightness);
-    memcpy(dst->text, pkt->text, sizeof(pkt->text));
-    memcpy(dst->temperature, pkt->temperature, sizeof(pkt->temperature));
-    memcpy(dst->time, pkt->time, sizeof(pkt->time));
-}
-
-
-
-
-/* Packets - protocol codes */
-#define FOREACH_PACKET_TYPE(PACKET_TYPE) \
-            PACKET_TYPE(CBP_MASTER_NEEDED_REQ)   \
-            PACKET_TYPE(CBP_I_AM_MASTER_REP)  \
-            PACKET_TYPE(CBP_SLAVE_NEEDED_REQ)   \
-            PACKET_TYPE(CBP_I_AM_SLAVE_REP)  \
-            PACKET_TYPE(CBP_GET_DATA_REQ)  \
-            PACKET_TYPE(CBP_GET_DATA_REP)  \
-            PACKET_TYPE(CBP_SET_DATA)   \
-            PACKET_TYPE(CBP_NUMBER)     \
 
 /* State of Indication Block: No connection to Master; In Master Mode;  In Slave Mode */
 #define FOREACH_STATE(STATE) \
@@ -117,61 +34,15 @@ inline void unpack_display_data(struct display_data* dst, const struct display_d
             STATE(IB_MASTER)  \
             STATE(IB_NUMBER)     \
 
-/* Device mode in packet: Indication Block in Slave mode; Control Block; Indication Block in Master mode */
-#define FOREACH_BLOCK_TYPE(BLOCK_TYPE) \
-            BLOCK_TYPE(CBP_DT_MASTER)   \
-            BLOCK_TYPE(CBP_DT_SLAVE)   \
-            BLOCK_TYPE(CBP_DT_MASTER_TEMP)   \
-            BLOCK_TYPE(CBP_DT_NUMBER)   \
-
-#define GENERATE_ENUM(ENUM) ENUM,
-#define GENERATE_STRING(STRING) #STRING,
-
 typedef enum {
-    FOREACH_PACKET_TYPE(GENERATE_ENUM)
-} cbp_paket_type;
-
-static const char *packet_type_to_string[] = {
-    FOREACH_PACKET_TYPE(GENERATE_STRING)
-};
-
-typedef enum {
-    FOREACH_STATE(GENERATE_ENUM)
+FOREACH_STATE(GENERATE_ENUM)
 } ib_state;
 
 static const char* state_to_string[] = {
     FOREACH_STATE(GENERATE_STRING)
 };
 
-typedef enum {
-    FOREACH_BLOCK_TYPE(GENERATE_ENUM)
-} cbp_block_type;
 
-static const char* block_type_to_string[] = {
-    FOREACH_BLOCK_TYPE(GENERATE_STRING)
-};
-
-
-static inline bool is_packet_block_correct(cbp_paket_type packet, cbp_block_type block) {
-    switch (packet) {
-            /* slave packets */
-            case CBP_MASTER_NEEDED_REQ:
-            case CBP_I_AM_SLAVE_REP:
-            case CBP_GET_DATA_REP:
-                return (block == CBP_DT_SLAVE) ? true : false;
-
-            /* master packets */
-            case CBP_I_AM_MASTER_REP:
-            case CBP_SLAVE_NEEDED_REQ:
-            case CBP_GET_DATA_REQ:
-            case CBP_SET_DATA:
-                return (block == CBP_DT_SLAVE) ? false : true;
-            
-            /* wrong packet type */
-            default: 
-                return false;
-    }
-}
 
 struct indication_block;
 
@@ -203,40 +74,6 @@ struct indication_block {
     cbp_block_type master_type;
 } ib;
 
-
-static inline struct cbphdr* cbp_hdr(const struct sk_buff* skb) {
-    return (struct cbphdr*)skb_network_header(skb);
-}
-
-static inline int cbp_hdr_len(void) {
-    return sizeof(struct cbphdr);
-}
-
-static inline void* payload_hdr(const struct sk_buff* skb) {
-    return (void*)skb_network_header(skb) + cbp_hdr_len();
-}
-
-static inline int cbp_payload_len(cbp_paket_type packet) {
-    if (packet != CBP_GET_DATA_REP && packet != CBP_SET_DATA)
-        return 0;
-
-    return (packet == CBP_GET_DATA_REP) ? 
-        sizeof(struct sensor_data) : 
-        sizeof(struct display_data);
-}
-
-static inline void pack_cbp_payload(void* pkt, void* src, cbp_paket_type packet) {
-    switch (packet) {
-    case CBP_GET_DATA_REP:
-        pack_sensor_data((struct sensor_data*) pkt, (struct sensor_data*) src);
-        break;
-    case CBP_SET_DATA:
-        pack_display_data((struct display_data*) pkt, (struct display_data*) src);
-        break;
-    default:
-        break;
-    }
-}
 
 static struct sensor_data* read_sensors(struct indication_block* _ib) {
 
@@ -296,113 +133,6 @@ static int packet_stub(struct sk_buff* skb, struct indication_block* _ib) {
 }
 
 
-/* return true, if eth addr1 > eth addr2 */
-static inline bool ether_addr_greater(const u8* addr1, const u8* addr2)
-{
-    /* temp solution: maybe not the most efficient way - bytes comparing */
-    int i;
-
-    for (i = 0; i < ETH_ALEN; i++)
-        if (addr1[i] > addr2[i])
-            return true;
-        else if (addr1[i] < addr2[i])
-            return false;
-    
-    return false;
-}
-
-
-static struct sk_buff* cbp_create(int op_command, int block_type, 
-	void* payload, struct net_device* dev, 
-	const unsigned char* dest_hw,
-	const unsigned char* src_hw)
-{
-	struct sk_buff* skb;
-	struct cbphdr* cbp;
-    void* pkt_payload;
-    	
-	int hlen = LL_RESERVED_SPACE(dev);
-	int tlen = dev->needed_tailroom;
-
-	skb = alloc_skb(cbp_hdr_len() + cbp_payload_len(op_command) + hlen + tlen, GFP_ATOMIC);
-	if (!skb)
-		return NULL;
-
-	skb_reserve(skb, hlen);
-	skb_reset_network_header(skb);
-    
-    if (payload && cbp_payload_len(op_command)) {
-        
-        cbp = skb_put(skb, cbp_hdr_len() + cbp_payload_len(op_command));
-        pkt_payload = (void*) (cbp + 1);
-
-        /* we have payload */
-        pack_cbp_payload(pkt_payload, payload, op_command);
-    } else {
-        cbp = skb_put(skb, cbp_hdr_len());
-    }
-
-	skb->dev = dev;
-	skb->protocol = htons(ETH_P_CBP);
-	if (!src_hw)
-		src_hw = dev->dev_addr;
-	if (!dest_hw)
-		dest_hw = dev->broadcast;
-
-	if (dev_hard_header(skb, dev, ETH_P_CBP, dest_hw, src_hw, skb->len) < 0)
-		goto out;
-
-	cbp->cbp_op = htons(op_command);
-	cbp->block_type = htons(block_type);
- 	
-	return skb;
-
-out:
-	kfree_skb(skb);
-	return NULL;
-}
-
-/* 
-    Create and send CBP packet with payload
-*/
-static void cbp_send_payload(int op, int bt, void* payload, struct net_device* dev,
-    const unsigned char* dest_hw, const unsigned char* src_hw)
-{
-    struct sk_buff* skb;
-       
-    /* Packet <-> Block correctness. To avoid creating packet/block by mistake that will be ignored by receiver anyway */
-    if (!is_packet_block_correct(op, bt)) {
-        PRINTD(DEBUG_WARN, KERN_WARNING DEV_LABEL ": Warning! Attempt to create incorrect [%s] - [%s]\n",
-            packet_type_to_string[op], block_type_to_string[bt]);
-        return;
-    }
-
-    /* payload must be not NULL for packet types with payload */
-    if (cbp_payload_len(op))
-        if (!payload)
-            return;
-
-    skb = cbp_create(op, bt, payload, dev, dest_hw, src_hw);
-
-    if (!skb)
-        return;
-
-    dev_queue_xmit(skb);
-
-    PRINTD(DEBUG_DBG, KERN_INFO DEV_LABEL ": Sent MACSRC=%pM MACDST=%pM MACPROTO=%04x [%s] [%s]\n",
-        eth_hdr(skb)->h_source, eth_hdr(skb)->h_dest,
-        ntohs(eth_hdr(skb)->h_proto), packet_type_to_string[op], block_type_to_string[bt]);
-
-    return;
-}
-
-/* 
-    Common send variant for most CBP packets without payload to exlude silly mistakes
-*/
-static inline void cbp_send_dst(int op, int bt, struct net_device* dev,
-    const unsigned char* dest_hw, const unsigned char* src_hw) {
-    cbp_send_payload(op, bt, NULL, dev, dest_hw, src_hw);
-}
 
 /*
     Process incoming CBP packet. Use global structure IB to reflect current IB state
