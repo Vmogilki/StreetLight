@@ -362,7 +362,9 @@ out:
 	return NULL;
 }
 
-/* Create and send CBP packet with payload */
+/* 
+    Create and send CBP packet with payload
+*/
 static void cbp_send_payload(int op, int bt, void* payload, struct net_device* dev,
     const unsigned char* dest_hw, const unsigned char* src_hw)
 {
@@ -394,14 +396,16 @@ static void cbp_send_payload(int op, int bt, void* payload, struct net_device* d
     return;
 }
 
-/* Common send variant for most CBP packets without payload to exlude silly mistakes */
+/* 
+    Common send variant for most CBP packets without payload to exlude silly mistakes
+*/
 static inline void cbp_send_dst(int op, int bt, struct net_device* dev,
     const unsigned char* dest_hw, const unsigned char* src_hw) {
     cbp_send_payload(op, bt, NULL, dev, dest_hw, src_hw);
 }
 
 /*
-Process incoming CBP packet. Use global structure IB to reflect current IB state
+    Process incoming CBP packet. Use global structure IB to reflect current IB state
 */
 static int cbp_process(struct sk_buff* skb) {
     
@@ -472,9 +476,9 @@ out_of_mem:
 static void send_data(struct indication_block* _ib) {
     struct timeval current_time; struct tm broken;
     
-    /* Set time and text. Temp and Bri must be filled by average() */
+    /* Set time (UTC+3) and text. Temp and Bri must be filled by average() */
     do_gettimeofday(&current_time);
-    time_to_tm(current_time.tv_sec, 0, &broken);
+    time_to_tm(current_time.tv_sec, 3, &broken);
  
     snprintf(_ib->data_for_slaves.time, DISPLAY_TIME_LEN, "%02d:%02d:%02d",
         broken.tm_hour, broken.tm_min, broken.tm_sec);
