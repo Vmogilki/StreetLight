@@ -34,6 +34,8 @@ struct common_block {
     struct timer_list timer;
     struct net_device* dev;
     int state;
+    int type;
+
     spinlock_t lock;
     int attempts;
 
@@ -41,6 +43,7 @@ struct common_block {
     struct slave_part* sp;
 };
 
+typedef int (*packet_handler_func)(struct sk_buff* skb, struct common_block* _cb);
 
 static inline void store_sensor_data(struct master_part* _mp, struct sensor_data* sns) {
     _mp->t_accum += sns->temperature;

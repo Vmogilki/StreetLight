@@ -5,6 +5,9 @@
 #include <linux/etherdevice.h>
 #include <linux/skbuff.h>
 
+/* Module label */
+#define DEV_LABEL "CBP"
+
 /* Debug printing */
 #define PRINTD(level,format,args...) \
    (((level) & debug) ? printk(format, ## args) : 1)
@@ -110,17 +113,12 @@ typedef enum {
     FOREACH_PACKET_TYPE(GENERATE_ENUM)
 } cbp_paket_type;
 
-static const char* packet_type_to_string[] = {
-    FOREACH_PACKET_TYPE(GENERATE_STRING)
-};
-
 typedef enum {
     FOREACH_BLOCK_TYPE(GENERATE_ENUM)
 } cbp_block_type;
 
-static const char* block_type_to_string[] = {
-    FOREACH_BLOCK_TYPE(GENERATE_STRING)
-};
+extern const char* packet_type_to_string[];
+extern const char* block_type_to_string[];
 
 static inline bool is_packet_block_correct(cbp_paket_type packet, cbp_block_type block) {
     switch (packet) {

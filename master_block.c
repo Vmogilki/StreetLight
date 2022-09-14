@@ -1,51 +1,22 @@
-#include <linux/module.h>
-#include <linux/moduleparam.h>
-#include <linux/init.h>
 #include <linux/timer.h>
 #include <linux/if_arp.h>
 #include <linux/time.h>
 
-# include "cbp_base.h"
-# include "master_block.h"
+#include "cbp_base.h"
+#include "master_block.h"
+#include "control_block.h"
 
-/* Module label */
-#define DEV_LABEL "CB"
-
-/* Module params */
-//int debug = DEFAULT_DEBUG_LEVEL;
-//static char* eth_device_name = "ens160";
-
-/* State of Control Block: No slaves; In Master Mode */
-#define FOREACH_CB_STATE(CB_STATE) \
-            CB_STATE(CB_WAITING_FOR_SLAVE)   \
-            CB_STATE(CB_MASTER)  \
-            CB_STATE(CB_NUMBER)     \
-
-typedef enum {
-    FOREACH_CB_STATE(GENERATE_ENUM)
-} cb_state;
-
-static const char* cb_state_to_string[] = {
+const char* cb_state_to_string[] = {
     FOREACH_CB_STATE(GENERATE_STRING)
 };
-
-
-//static struct common_block cb;
-//static struct master_part mp;
-
-/*
-cb.mp = &mp;
-cb.sp = NULL;
-*/
 
 int packet_stub(struct sk_buff* skb, struct common_block* _cb) {
 
     u16 cbp_op = ntohs(cbp_hdr(skb)->cbp_op);
     u16 block_type = ntohs(cbp_hdr(skb)->block_type);
 
-    PRINTD(DEBUG_DBG, KERN_INFO DEV_LABEL ": Stub called for packet from MACSRC=%pM [%s] [%s] with IB [%s]\n",
-        eth_hdr(skb)->h_source, packet_type_to_string[cbp_op],
-        block_type_to_string[block_type], cb_state_to_string[_cb->state]);
+    PRINTD(DEBUG_DBG, KERN_INFO DEV_LABEL ": Stub called for packet from MACSRC=%pM [%s] [%s]\n",
+        eth_hdr(skb)->h_source, packet_type_to_string[cbp_op], block_type_to_string[block_type]);
 
     consume_skb(skb);
     return NET_RX_SUCCESS;
@@ -87,7 +58,7 @@ static void send_data(struct common_block* _cb) {
     snprintf(_cb->mp->data_for_slaves.text, DISPLAY_TXT_LEN, "Information message for indication block!");
 
     /* send set_data to slaves */
-    cbp_send_payload(CBP_SET_DATA, CBP_DT_MASTER_TEMP, &_cb->mp->data_for_slaves, _cb->dev, NULL, NULL);
+    cbp_send_payload(CBP_SET_DATA, _cb->type, &_cb->mp->data_for_slaves, _cb->dev, NULL, NULL);
 
     /* Next packet after N cycles */
     _cb->mp->set_data_cycles = SET_DATA_CYCLES;
@@ -111,7 +82,7 @@ static void getdata_cycle_timer_fn(struct timer_list* t) {
 
             _cb->attempts = 0;
             mod_timer(&_cb->timer, jiffies + TM_GET_DATA_CYCLE);
-            cbp_send_dst(CBP_GET_DATA_REQ, CBP_DT_MASTER_TEMP, _cb->dev, NULL, NULL);
+            cbp_send_dst(CBP_GET_DATA_REQ, _cb->type, _cb->dev, NULL, NULL);
 
             /* Send set_data */
             if (!--_cb->mp->set_data_cycles) {
@@ -139,7 +110,7 @@ void slave_needed_sent_timer_fn(struct timer_list* t) {
     if (_cb->state == CB_WAITING_FOR_SLAVE && --_cb->attempts) {
         /* try one more time */
         mod_timer(&_cb->timer, jiffies + TM_SLAVE_NEEDED_SENT);
-        cbp_send_dst(CBP_SLAVE_NEEDED_REQ, CBP_DT_MASTER_TEMP, _cb->dev, NULL, NULL);
+        cbp_send_dst(CBP_SLAVE_NEEDED_REQ, _cb->type, _cb->dev, NULL, NULL);
     }
     /* Otherwise do nothing. Wait for master needed reqs */
     spin_unlock_bh(&_cb->lock);
@@ -182,7 +153,7 @@ int ph_is_rep_process(struct sk_buff* skb, struct common_block* _cb) {
 int ph_mn_req_process(struct sk_buff* skb, struct common_block* _cb) {
 
     int ret = ph_is_rep_process(skb, _cb);
-    cbp_send_dst(CBP_I_AM_MASTER_REP, CBP_DT_MASTER_TEMP, _cb->dev, eth_hdr(skb)->h_source, NULL);
+    cbp_send_dst(CBP_I_AM_MASTER_REP, _cb->type, _cb->dev, eth_hdr(skb)->h_source, NULL);
     return ret;
 }
 

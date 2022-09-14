@@ -1,6 +1,12 @@
 # include "cbp_base.h"
 
-#define DEV_LABEL "CBP"
+const char* packet_type_to_string[] = {
+    FOREACH_PACKET_TYPE(GENERATE_STRING)
+};
+
+const char* block_type_to_string[] = {
+    FOREACH_BLOCK_TYPE(GENERATE_STRING)
+};
 
 
 struct sk_buff* cbp_create(int op_command, int block_type,

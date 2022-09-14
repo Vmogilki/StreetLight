@@ -8,9 +8,6 @@
 # include "cbp_base.h"
 # include "master_block.h"
 
-/* Module label */
-#define DEV_LABEL "IB"
-
 /* Timeouts */
 #define	TM_MASTER_NEEDED_SENT   (1*HZ)  /* Slave mode */
 #define	TM_NO_REQ_FROM_MASTER   (6*TM_GET_DATA_CYCLE)   /* Slave mode */
@@ -35,14 +32,13 @@ IB_WAITING_FOR_SLAVE == CB_WAITING_FOR_SLAVE, IB_MASTER == CB_MASTER
             IB_STATE(IB_NUMBER)     \
 
 typedef enum {
-FOREACH_IB_STATE(GENERATE_ENUM)
+    FOREACH_IB_STATE(GENERATE_ENUM)
 } ib_state;
 
 static const char* ib_state_to_string[] = {
     FOREACH_IB_STATE(GENERATE_STRING)
 };
 
-typedef int (*packet_handler_func)(struct sk_buff* skb, struct common_block* _cb);
 
 static packet_handler_func packet_handlers[CBP_NUMBER][IB_NUMBER];
 
@@ -57,6 +53,7 @@ static struct common_block cb;
 static struct master_part mp;
 static struct slave_part sp;
 
+
 static struct sensor_data* read_sensors(struct slave_part* _sp) {
 
     int tmp;
@@ -67,7 +64,6 @@ static struct sensor_data* read_sensors(struct slave_part* _sp) {
 
     return &_sp->sensors;
 }
-
 
 
 static inline void display_data_from_master(const struct display_data* pck) {
@@ -335,13 +331,15 @@ static inline void init_slave_part(struct slave_part* _sp) {
     clean_sensor_data(&_sp->sensors);
 }
 
-static void init_cb(struct common_block* _cb, struct net_device* dev) {
+static void init_indication_block(struct common_block* _cb, struct net_device* dev) {
     _cb->mp = &mp;
     _cb->sp = &sp;
 
     _cb->dev = dev;
     _cb->attempts = 0;
     _cb->state = IB_WAITING_FOR_MASTER;
+    _cb->type = CBP_DT_MASTER_TEMP;
+
     spin_lock_init(&_cb->lock);
     timer_setup(&_cb->timer, master_needed_sent_timer_fn, 0);
 
@@ -372,7 +370,7 @@ static void init_cb(struct common_block* _cb, struct net_device* dev) {
 }
 
 
-int init_module(void) {
+static int __init init_ib(void) {
     
     struct net_device* eth_dev = NULL;
 
@@ -393,7 +391,7 @@ int init_module(void) {
 
             cbp_packet_handler = client_packet_handler;
 
-            init_cb(&cb, eth_dev);
+            init_indication_block(&cb, eth_dev);
 
             dev_add_pack(&cb_packet_type);
 
@@ -403,7 +401,7 @@ int init_module(void) {
     return 0;
 }
 
-void cleanup_module(void) {
+static void __exit exit_ib(void) {
 
     if (cb.dev) {
         del_timer(&cb.timer);
@@ -417,10 +415,13 @@ void cleanup_module(void) {
     return;
 }
 
+module_init(init_ib);
+module_exit(exit_ib);
+
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("V.Mogilkin <viktor.mogilkin@yandex.ru>");
 MODULE_DESCRIPTION("StreetLight Indication Module");
-MODULE_VERSION("1.00");
+MODULE_VERSION("2.00");
 
 module_param(debug, int, 0);
 MODULE_PARM_DESC(debug, "Debugging messages level");
