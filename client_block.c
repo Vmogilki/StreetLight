@@ -19,6 +19,12 @@
 int debug = DEFAULT_DEBUG_LEVEL;
 static char* eth_device_name = "ens160";
 
+static struct packet_type cb_packet_type __read_mostly = {
+    .type = cpu_to_be16(ETH_P_CBP),
+    .func = cbp_rcv,
+};
+
+
 /*
 State of Indication Block: No slaves; In Master Mode; No connection to Master; In Slave Mode
 First two states similar to CB states (for Master mode):
@@ -158,7 +164,7 @@ static void no_request_from_master_timer_fn(struct timer_list* t) {
     Called for CBP_I_AM_MASTER_REP when IB in Wait_for_Master state. Go to Slave state and set
     timer to control Master availability
 */
-static int ph_im_rep_process(struct sk_buff* skb, struct common_block* _cb) {
+static int ph_im_rep_process_s(struct sk_buff* skb, struct common_block* _cb) {
 
     u16 block_type = ntohs(cbp_hdr(skb)->block_type);
 
@@ -183,12 +189,29 @@ static int ph_im_rep_process(struct sk_buff* skb, struct common_block* _cb) {
 }
 
 /*
+    Called for CBP_I_AM_MASTER_REP when IB in Wait_for_Slave or Master state. If packet not from CB, 
+    then ignore it (not expected scenario), otherwise go to Slave state and set timer to control Master availability 
+*/
+static int ph_im_rep_process_m(struct sk_buff* skb, struct common_block* _cb) {
+
+    if (ntohs(cbp_hdr(skb)->block_type) != CBP_DT_MASTER) {
+ 
+        consume_skb(skb);
+        return NET_RX_SUCCESS;
+    }
+
+    return ph_im_rep_process_s(skb, _cb);
+
+}
+
+
+/*
     Called for CBP_SLAVE_NEEDED_REQ when IB in Wait_for_Master state
 */
 static int ph_sn_req_process_wm(struct sk_buff* skb, struct common_block* _cb) {
 
     /* No matter if master is temp or not, we go to slave state anyway */
-    int ret = ph_im_rep_process(skb, _cb);
+    int ret = ph_im_rep_process_s(skb, _cb);
 
     /* Send response with confirmation  */
     cbp_send_dst(CBP_I_AM_SLAVE_REP, CBP_DT_SLAVE, _cb->dev, eth_hdr(skb)->h_source, NULL);
@@ -295,11 +318,6 @@ static int ph_sd_process(struct sk_buff* skb, struct common_block* _cb) {
     return NET_RX_SUCCESS;
 }
 
-static struct packet_type cb_packet_type __read_mostly = {
-    .type = cpu_to_be16(ETH_P_CBP),
-    .func = cbp_rcv,
-};
-
 
 static inline void init_handler_with_stub(void) {
     int i, j;
@@ -352,7 +370,9 @@ static void init_indication_block(struct common_block* _cb, struct net_device* d
     packet_handlers[CBP_MASTER_NEEDED_REQ][WAITING_FOR_SLAVE] =
     packet_handlers[CBP_MASTER_NEEDED_REQ][MASTER] = ph_mn_req_process;
 
-    packet_handlers[CBP_I_AM_MASTER_REP][WAITING_FOR_MASTER] = ph_im_rep_process;
+    packet_handlers[CBP_I_AM_MASTER_REP][WAITING_FOR_MASTER] = ph_im_rep_process_s;
+    packet_handlers[CBP_I_AM_MASTER_REP][WAITING_FOR_SLAVE] = 
+    packet_handlers[CBP_I_AM_MASTER_REP][MASTER] = ph_im_rep_process_m;
 
     packet_handlers[CBP_SLAVE_NEEDED_REQ][WAITING_FOR_MASTER] = ph_sn_req_process_wm;
     packet_handlers[CBP_SLAVE_NEEDED_REQ][SLAVE] = ph_sn_req_process_s;
