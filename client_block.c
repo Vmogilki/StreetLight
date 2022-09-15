@@ -25,10 +25,10 @@ First two states similar to CB states (for Master mode):
 IB_WAITING_FOR_SLAVE == CB_WAITING_FOR_SLAVE, IB_MASTER == CB_MASTER 
 */
 #define FOREACH_IB_STATE(IB_STATE) \
-            IB_STATE(IB_WAITING_FOR_SLAVE)   \
-            IB_STATE(IB_MASTER)  \
-            IB_STATE(IB_WAITING_FOR_MASTER)   \
-            IB_STATE(IB_SLAVE)   \
+            IB_STATE(WAITING_FOR_SLAVE)   \
+            IB_STATE(MASTER)  \
+            IB_STATE(WAITING_FOR_MASTER)   \
+            IB_STATE(SLAVE)   \
             IB_STATE(IB_NUMBER)     \
 
 typedef enum {
@@ -82,7 +82,7 @@ static void master_needed_sent_timer_fn(struct timer_list* t) {
 
     spin_lock_bh(&_cb->lock);
 
-	if (_cb->state == IB_WAITING_FOR_MASTER) {
+	if (_cb->state == WAITING_FOR_MASTER) {
 		if (--_cb->attempts) {
             /* try one more time */
             mod_timer(&_cb->timer, jiffies + TM_MASTER_NEEDED_SENT);
@@ -90,7 +90,7 @@ static void master_needed_sent_timer_fn(struct timer_list* t) {
 		}
 		else if (_cb->sp->oldest) {
 			/* Still waiting for master and no older IBs after N attempts, so I'll be temporary master waiting for slaves */
-			_cb->state = IB_WAITING_FOR_SLAVE;
+			_cb->state = WAITING_FOR_SLAVE;
 			_cb->attempts = MAX_SLAVE_NEEDED_REQS;
 			_cb->timer.function = slave_needed_sent_timer_fn;
 			_cb->timer.expires = jiffies + TM_SLAVE_NEEDED_SENT;
@@ -105,7 +105,7 @@ static void master_needed_sent_timer_fn(struct timer_list* t) {
 
 static void send_master_needed(struct common_block* _cb) {
 
-    _cb->state = IB_WAITING_FOR_MASTER;
+    _cb->state = WAITING_FOR_MASTER;
     _cb->sp->oldest = true;
 
     eth_zero_addr(_cb->sp->master_addr);
@@ -164,7 +164,7 @@ static int ph_im_rep_process(struct sk_buff* skb, struct common_block* _cb) {
 
     del_timer(&_cb->timer);
 
-    _cb->state = IB_SLAVE;
+    _cb->state = SLAVE;
 
     ether_addr_copy(_cb->sp->master_addr, eth_hdr(skb)->h_source);
     _cb->sp->master_type = block_type;
@@ -337,7 +337,7 @@ static void init_indication_block(struct common_block* _cb, struct net_device* d
 
     _cb->dev = dev;
     _cb->attempts = 0;
-    _cb->state = IB_WAITING_FOR_MASTER;
+    _cb->state = WAITING_FOR_MASTER;
     _cb->type = CBP_DT_MASTER_TEMP;
 
     spin_lock_init(&_cb->lock);
@@ -347,26 +347,26 @@ static void init_indication_block(struct common_block* _cb, struct net_device* d
     init_slave_part(_cb->sp);
    
     init_handler_with_stub();
-    packet_handlers[CBP_MASTER_NEEDED_REQ][IB_WAITING_FOR_MASTER] = 
-    packet_handlers[CBP_MASTER_NEEDED_REQ][IB_SLAVE] = ph_mn_req_ignore;
-    packet_handlers[CBP_MASTER_NEEDED_REQ][IB_WAITING_FOR_SLAVE] =
-    packet_handlers[CBP_MASTER_NEEDED_REQ][IB_MASTER] = ph_mn_req_process;
+    packet_handlers[CBP_MASTER_NEEDED_REQ][WAITING_FOR_MASTER] = 
+    packet_handlers[CBP_MASTER_NEEDED_REQ][SLAVE] = ph_mn_req_ignore;
+    packet_handlers[CBP_MASTER_NEEDED_REQ][WAITING_FOR_SLAVE] =
+    packet_handlers[CBP_MASTER_NEEDED_REQ][MASTER] = ph_mn_req_process;
 
-    packet_handlers[CBP_I_AM_MASTER_REP][IB_WAITING_FOR_MASTER] = ph_im_rep_process;
+    packet_handlers[CBP_I_AM_MASTER_REP][WAITING_FOR_MASTER] = ph_im_rep_process;
 
-    packet_handlers[CBP_SLAVE_NEEDED_REQ][IB_WAITING_FOR_MASTER] = ph_sn_req_process_wm;
-    packet_handlers[CBP_SLAVE_NEEDED_REQ][IB_SLAVE] = ph_sn_req_process_s;
-    packet_handlers[CBP_SLAVE_NEEDED_REQ][IB_WAITING_FOR_SLAVE] = 
-    packet_handlers[CBP_SLAVE_NEEDED_REQ][IB_MASTER] = ph_sn_req_process_m;
+    packet_handlers[CBP_SLAVE_NEEDED_REQ][WAITING_FOR_MASTER] = ph_sn_req_process_wm;
+    packet_handlers[CBP_SLAVE_NEEDED_REQ][SLAVE] = ph_sn_req_process_s;
+    packet_handlers[CBP_SLAVE_NEEDED_REQ][WAITING_FOR_SLAVE] = 
+    packet_handlers[CBP_SLAVE_NEEDED_REQ][MASTER] = ph_sn_req_process_m;
    
-    packet_handlers[CBP_I_AM_SLAVE_REP][IB_WAITING_FOR_SLAVE] =
-    packet_handlers[CBP_I_AM_SLAVE_REP][IB_MASTER] = ph_is_rep_process;
+    packet_handlers[CBP_I_AM_SLAVE_REP][WAITING_FOR_SLAVE] =
+    packet_handlers[CBP_I_AM_SLAVE_REP][MASTER] = ph_is_rep_process;
 
-    packet_handlers[CBP_GET_DATA_REQ][IB_SLAVE] = ph_gd_req_process;
+    packet_handlers[CBP_GET_DATA_REQ][SLAVE] = ph_gd_req_process;
 
-    packet_handlers[CBP_GET_DATA_REP][IB_MASTER] = ph_gd_rep_process;
+    packet_handlers[CBP_GET_DATA_REP][MASTER] = ph_gd_rep_process;
 
-    packet_handlers[CBP_SET_DATA][IB_SLAVE] = ph_sd_process;
+    packet_handlers[CBP_SET_DATA][SLAVE] = ph_sd_process;
 }
 
 

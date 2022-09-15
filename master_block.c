@@ -74,7 +74,7 @@ static void getdata_cycle_timer_fn(struct timer_list* t) {
     spin_lock_bh(&_cb->lock);
 
     /* Still temp master */
-    if (_cb->state == CB_MASTER) {
+    if (_cb->state == MASTER) {
         /* At least one response has been received from slave(s), then send another get_data request */
         if (_cb->attempts) {
 
@@ -91,7 +91,7 @@ static void getdata_cycle_timer_fn(struct timer_list* t) {
         }
         else {
             /* seems no slaves. goto in Waiting for Slave state and wait for master_needed request */
-            _cb->state = CB_WAITING_FOR_SLAVE;
+            _cb->state = WAITING_FOR_SLAVE;
         }
     }
 
@@ -107,7 +107,7 @@ void slave_needed_sent_timer_fn(struct timer_list* t) {
 
     spin_lock_bh(&_cb->lock);
 
-    if (_cb->state == CB_WAITING_FOR_SLAVE && --_cb->attempts) {
+    if (_cb->state == WAITING_FOR_SLAVE && --_cb->attempts) {
         /* try one more time */
         mod_timer(&_cb->timer, jiffies + TM_SLAVE_NEEDED_SENT);
         cbp_send_dst(CBP_SLAVE_NEEDED_REQ, _cb->type, _cb->dev, NULL, NULL);
@@ -122,11 +122,11 @@ void slave_needed_sent_timer_fn(struct timer_list* t) {
 int ph_is_rep_process(struct sk_buff* skb, struct common_block* _cb) {
 
     /* First slave appears - go to Master mode and schedule get_data reqs */
-    if (_cb->state == CB_WAITING_FOR_SLAVE) {
+    if (_cb->state == WAITING_FOR_SLAVE) {
         /* del wait_for_slave timer */
         del_timer(&_cb->timer);
 
-        _cb->state = CB_MASTER;
+        _cb->state = MASTER;
 
         /* Iniate get_data request from getdata cycle timer */
         _cb->attempts = 1;
