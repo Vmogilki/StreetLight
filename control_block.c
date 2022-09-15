@@ -3,6 +3,7 @@
 #include <linux/init.h>
 #include <linux/if_arp.h>
 
+
 #include "cbp_base.h"
 #include "master_block.h"
 #include "control_block.h"
@@ -141,12 +142,20 @@ static void init_control_block(struct common_block* _cb, struct net_device* dev)
     packet_handlers[CBP_GET_DATA_REP][MASTER] = ph_gd_rep_process;
 }
 
+extern void ib_module(void);
+void cb_module(void) {}
+EXPORT_SYMBOL(cb_module);
 
 static int __init init_cb(void) {
 
     struct net_device* eth_dev = NULL;
 
     PRINTD(DEBUG_INFO, KERN_INFO DEV_LABEL ": Setup Control Block Module\n");
+
+    if (symbol_get(ib_module)) {
+        PRINTD(DEBUG_ERR, KERN_ERR DEV_LABEL ": Cannot load module. IB instance has been already loaded!\n");
+        return -EEXIST;
+    }
 
     eth_dev = dev_get_by_name(&init_net, eth_device_name);
 

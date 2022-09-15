@@ -390,11 +390,22 @@ static void init_indication_block(struct common_block* _cb, struct net_device* d
 }
 
 
+extern void cb_module(void);
+void ib_module(void) {}
+EXPORT_SYMBOL(ib_module);
+
+
 static int __init init_ib(void) {
     
     struct net_device* eth_dev = NULL;
 
     PRINTD(DEBUG_INFO, KERN_INFO DEV_LABEL ": Setup Client Block Module\n");
+
+    if (symbol_get(cb_module)) {
+        PRINTD(DEBUG_ERR, KERN_ERR DEV_LABEL ": Cannot load module. CB instance has been already loaded!\n");
+        return -EEXIST;
+    }
+
 
     eth_dev = dev_get_by_name(&init_net, eth_device_name);
 
